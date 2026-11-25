@@ -1,8 +1,8 @@
 plugins { id 'com.android.application' }
 
 def repo = providers.gradleProperty('hiveRepo').orElse('').get()
-def code = providers.gradleProperty('hiveCode').orElse('1').get().toInteger()
-def name = providers.gradleProperty('hiveVersion').orElse('1.0.0').get()
+def code = providers.gradleProperty('hiveCode').orElse('2').get().toInteger()
+def name = providers.gradleProperty('hiveVersion').orElse('1.1.0').get()
 if (repo && !(repo ==~ /[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/)) throw new GradleException('Invalid hiveRepo')
 if (!(name ==~ /[0-9A-Za-z.\-]+/)) throw new GradleException('Invalid hiveVersion')
 android {

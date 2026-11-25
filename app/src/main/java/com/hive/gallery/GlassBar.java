@@ -12,7 +12,7 @@ final class GlassBar extends View {
     private final Path clip=new Path();
     private View source; private boolean light, motion=true; private int count=4; private float x=0,goal=0,v=0; private long last=0;
     GlassBar(Context c,HoneycombView gallery){super(c);this.gallery=gallery;setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);}
-    void source(View v){source=v;invalidate();}
+    void source(View v){source=v;blur.discardDisplayList();invalidate();}
     void theme(boolean l){light=l;invalidate();}
     void motion(boolean m){motion=m;invalidate();}
     void tab(int index,int count){this.count=count;goal=index;invalidate();}

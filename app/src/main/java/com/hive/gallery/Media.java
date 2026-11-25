@@ -18,7 +18,7 @@ final class Media {
         ArrayList<Media> out=new ArrayList<>();
         read(ctx,MediaStore.Images.Media.EXTERNAL_CONTENT_URI,false,out);
         read(ctx,MediaStore.Video.Media.EXTERNAL_CONTENT_URI,true,out);
-        out.sort((a,b)->Long.compare(b.date,a.date)); return out;
+        out.sort(Comparator.comparingLong((Media m)->m.date).reversed().thenComparing(m->m.uri.toString())); return out;
     }
     private static void read(Context ctx,Uri base,boolean video,List<Media> out){
         String[] cols=video?new String[]{"_id","_display_name","bucket_display_name","datetaken","date_added","mime_type","duration"}:new String[]{"_id","_display_name","bucket_display_name","datetaken","date_added","mime_type"};
