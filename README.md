@@ -1,28 +1,37 @@
-# Hive Gallery 1.1.0 (version code 2)
+# Hive Gallery 1.2.0 (version code 3)
 
-Native Android gallery, Android 10+. This maintenance release retains the original honeycomb, four-direction browsing, black/light themes, bounce physics, staggered entry and floating glass navigation. OTA is disabled.
+Native Android 10+ gallery, continuing V1.1. OTA is disabled. Package remains `com.hive.gallery`. Existing honeycomb layout choices, navigation, theme, favourites and motion controls remain.
 
-## Build with one existing GitHub repository (browser only)
-1. Unzip the download on your laptop. Open the HiveGallery-V1.1 folder.
-2. On your existing repository's default branch (master), upload the complete `app` folder plus `build.gradle`, `settings.gradle`, `gradle.properties`, `README.md`. The optional `design` and `scripts` folders contain the SVG sources and conversion utility. Commit replacing the old files. Keep the project files at repository root.
-3. Open `.github/workflows/build-apk.yml` on GitHub and replace its full contents with the file of the same name from this archive (hidden folders may need to be shown in your file manager). Commit to master. Do not retain the obsolete build workflow.
-4. Actions > Build Hive V1.1 APK > Run workflow > master > Run workflow. Start a new run, not a retry of the old commit.
-5. Download the `HiveGallery-v1.1` artifact, extract `HiveGallery-v1.1.apk`, transfer to your phone and install.
+## Build on GitHub — laptop browser only
+1. Extract the supplied HiveGallery-V1.2.zip. Open the `HiveGallery-V1.2` folder, not its parent.
+2. In your existing GitHub repository on `master`, upload the `app` folder and root `build.gradle`, `settings.gradle`, `gradle.properties` and `README.md`, replacing the older versions. Include all files inside app, especially the two new Java classes and new drawable resources. `design` and `scripts` are optional for building.
+3. Replace `.github/workflows/build-apk.yml` with the included version (or the separately provided YAML). Commit to master. The Android SDK setup action remains in the workflow.
+4. Actions > Build Hive V1.2 APK > Run workflow > master > Run workflow. Start a NEW run, not a retry of the V1.1 commit.
+5. Download `HiveGallery-v1.2` under Artifacts, unzip it, and install `HiveGallery-v1.2.apk` on your phone.
 
-Debug builds on fresh CI runners can have different signing certificates. Try installing over 1.0 first. If Android reports a signature conflict, uninstall Hive 1.0 before installing 1.1. This clears Hive's favourites/preferences but does not delete your original device photos/videos. No custom signing keys or secrets required for this test release.
+No Android Studio, Codespaces, Termux, signing secrets, OTA repository or other software is required. This is debug-signed. Fresh GitHub runners may use different debug keys; if Android reports a signing conflict, uninstall the older Hive app before installing V1.2. This resets Hive preferences and favourites but does not delete your original media library.
 
-## Layout selector
-Open the top-right three-dot menu > Gallery layout. Choose Chronological (day/month/year), Continuous (newest first, no separators), or Continuous (filename A–Z, no date sorting). The choice persists and applies to media grids including album contents and favourites. Albums and Stories overview remain collections.
+## Viewer changes
+- `HoneycombView.boundsInWindow` exposes the actual last-drawn, scaled tile bounds; gallery motion is frozen while the viewer is open. The selected tile is temporarily suppressed while the shared-element morph runs.
+- `MediaMorph` interpolates the six rounded polygon vertices into a rectangular image mask, along with the bounds and crop matrix, using the original thumbnail at the tile end and the decoded display-sized image at the viewer end. The same transition runs backwards on close. A Back action during opening reverses the current progress.
+- The image is decoded off the UI thread before transitioning. The previous frame stays visible while the next image is decoded. Decodes use a generation guard and cancellation to avoid stale callbacks. Display image resolution is capped at 2400px on the long edge; the original file is not modified.
+- Viewer header, back/details controls, filmstrip container and action bar remain mounted when changing media. Only the media layer translates (320ms). The metadata text is updated in place. The filmstrip thumbnails are refreshed for the current index.
+- Opening morph 390ms; closing morph 360ms. If a source/destination is not visible (e.g. closing after browsing to another batch), a fade is used instead of animating to an unrelated tile. System reduced-motion and Hive motion settings are respected.
+- Video uses TextureView/MediaPlayer, with a still preview retained until the player supplies a frame. The current video frame is captured when possible on leaving playback. Play/pause is explicit.
+- MediaStore changes received while the viewer is active are deferred until it closes.
 
-## Rendering changes
-- The visible thumbnail working set is held strongly outside the LRU; queued requests for offscreen items are cancelled where possible. Decode results are bounded to 320px longest side and converted to ARGB_8888. Cache completion runs on main thread and redraws are coalesced.
-- Fully offscreen horizontal pages and tiles are not requested. The visible canvas renders directly; the glass uses a separate clipped, cached display list with no thumbnail requests. Snapshot reads do not enqueue work. Unchanged MediaStore query results do not refresh the screen.
-- Feather-style SVG assets based on the Feather icon set, converted to Android VectorDrawable files; SVG sources, converter and license included. No network icon requests during use or build.
+## Icons and popups
+- Header and arrow icons use centered ImageButtons rather than compound drawables on empty text buttons. Navigation and viewer actions use centered vector icons, aligned single-line labels and consistent spacing. Video duration badges use font-metric centering.
+- Menu, layout selector, search, motion settings, accessible media list, About, and media details use `GlassDialog`: rounded translucent gradient card, border highlight, blurred background when Android supports cross-window blur, dim fallback, styled options, pill buttons and subtle entry animation. Android permission and share panels remain native. Dormant OTA updater code is unchanged.
+- Existing Feather-derived SVG and VectorDrawable resources are retained; added sun and sliders assets for menu controls.
 
-## Verification checklist
-- Stay still on the previously affected page for 10 seconds after loading. No thumbnail should repeatedly turn grey.
-- Flick both directions, return to previously visited pages, switch tabs rapidly, open videos, toggle theme.
-- Select each layout, restart app, verify saved choice and alphabetical mode; check dates only appear in chronological mode.
-- Check nav icons, viewer actions and page arrows.
+## Device verification checklist
+- Open media at center, upper edge and either side; check it expands from its own position, preserves aspect ratio and does not turn grey.
+- Close immediately during opening; close after viewing; navigate to adjacent visible items and close. For an offscreen destination expect a fade, not a jump to an incorrect tile.
+- Tap Next/Previous quickly or swipe the photo: the image should move while header/back button and bottom controls stay fixed. Check a large portrait, landscape and video.
+- Start/pause/resume video, navigate away and return, rotate device, and background/foreground the app. Check for stale frames.
+- Open all in-app dialogs in dark and light modes; test search keyboard and scrolling settings; check header, nav, action icons and video badges for centering.
+- Test continuous and grouped layouts and stationary thumbnails, ensuring V1.1's cache fixes remain.
 
-Static syntax/resource checks were performed on the delivered project. Android SDK compilation, actual device rendering and the signing/install process must be verified by GitHub Actions and the phone. The cache/render changes target likely causes seen in the recording; no physical device profiling was available.
+## Validation and limitations
+All eight Java files were parsed using the JDK 17 compiler parser. Android XML resources, SVGs, workflow YAML and drawable references were checked. This is static validation, not Android type checking, APK compilation or real-device testing. Android SDK/Gradle are not installed in the authoring environment; build using the supplied GitHub workflow. Actual animation smoothness, device blur support and video behavior require testing on the phone.

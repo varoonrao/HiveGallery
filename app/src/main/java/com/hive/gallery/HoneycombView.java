@@ -23,6 +23,7 @@ final class HoneycombView extends View {
     private float focus=1f, bounce=.66f, gap=4, radius=5, stagger=22, entryDuration=520;
     private float x=0,xGoal=0,xV=0; private long lastFrame=0,entryStart=0,exitStart=0; private float entryFloor=0;
     private final float density; private final GestureDetector detector; private VelocityTracker tracker; private float downX,downY,startX,startY; private int axis=0; private boolean dragging=false; private boolean longPressed=false;
+    private boolean viewerFrozen; private long frozenAt; private String hiddenUri="";
     private String lastDate=""; private long drawnAt=0, frameId=0, backdropFrame=-1; private int backdropLeft,backdropTop,backdropW,backdropH;
     private final android.graphics.drawable.Drawable heartIcon,checkIcon,playIcon;
     private static final class Row { List<Media> items; String label; int type; float base,h,center,y; float[] widths,cxs; Row(String label,int type,float h){this.label=label;this.type=type;this.h=h;} Row(List<Media> items,int slots){this.items=items;type=0;widths=new float[items.size()];cxs=new float[items.size()];this.slots=slots;} int slots; }
@@ -36,6 +37,21 @@ final class HoneycombView extends View {
     @Override public boolean performClick(){super.performClick();return true;}
     @Override public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info){super.onInitializeAccessibilityNodeInfo(info);info.setClassName("android.widget.ScrollView");info.setScrollable(true);info.setContentDescription("Honeycomb gallery. Use volume-free navigation controls or swipe. Open media using accessible list in menu.");info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);}
     @Override public boolean performAccessibilityAction(int action,android.os.Bundle b){if(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD||action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD){if(!pages.isEmpty()){Page pg=pages.get(index);pg.goal=clamp(pg.goal+(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD?1:-1)*getHeight()*.65f,0,pg.max);invalidate();}return true;}return super.performAccessibilityAction(action,b);}
+    RectF boundsInWindow(Media media){
+        if(!isShown()||getAlpha()<.5f||media==null)return null;
+        for(int i=hits.size()-1;i>=0;i--){Hit hit=hits.get(i);if(hit.m.uri.equals(media.uri)){
+            RectF r=new RectF(hit.r);int[] loc=new int[2];getLocationInWindow(loc);r.offset(loc[0],loc[1]);return r;
+        }}return null;
+    }
+    void freezeForViewer(boolean freeze){
+        if(freeze==viewerFrozen)return;
+        viewerFrozen=freeze;
+        if(freeze){frozenAt=drawnAt==0?SystemClock.uptimeMillis():drawnAt;dragging=false;}
+        else{xGoal=index*getWidth();xV=0;for(Page pg:pages){pg.goal=clamp(pg.pos,0,pg.max);pg.v=0;}if(entryStart!=0)entryStart+=SystemClock.uptimeMillis()-frozenAt;if(outgoing!=null)exitStart+=SystemClock.uptimeMillis()-frozenAt;lastFrame=0;}
+        invalidate();
+    }
+    void hideForMorph(Media m){hiddenUri=m==null?"":m.uri.toString();invalidate();}
+    float morphRadius(){return dp(radius);}
     void theme(boolean light){this.light=light;bg=light?0xfff8f8fa:Color.BLACK;fg=light?0xff151518:Color.WHITE;muted=light?0xff68686f:0xff96969e;invalidate();}
     void settings(float focus,float bounce,float gap,float radius,float stagger,float duration,boolean motion){this.focus=focus;this.bounce=bounce;this.gap=gap;this.radius=radius;this.stagger=stagger;this.entryDuration=duration;this.motion=motion;invalidate();}
     void marks(Set<String> fav,Set<String> sel,boolean selecting){favorites.clear();favorites.addAll(fav);selected.clear();selected.addAll(sel);this.selecting=selecting;invalidate();}
@@ -72,11 +88,11 @@ final class HoneycombView extends View {
         for(Page pg:pages){pg.v+=((dragging&&axis==2?330:170)*(pg.goal-pg.pos)-(dragging&&axis==2?34:damp)*pg.v)*dt;pg.pos+=pg.v*dt;if(Math.abs(pg.goal-pg.pos)<.25f&&Math.abs(pg.v)<1){pg.pos=pg.goal;pg.v=0;}else moving=true;}
         return moving;
     }
-    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);long now=SystemClock.uptimeMillis();boolean moving=integrate(now);hits.clear();thumbs.beginFrame(this::postInvalidateOnAnimation);
+    @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);long now=viewerFrozen?frozenAt:SystemClock.uptimeMillis();boolean moving=!viewerFrozen&&integrate(now);hits.clear();thumbs.beginFrame(this::postInvalidateOnAnimation);
         // Main gallery draws directly to the view canvas. The glass never re-records this view's display list.
         drawContent(canvas,now,true);thumbs.endFrame();drawnAt=now;frameId++;
         listener.redrawGlass();
-        if(moving||dragging||(animations()&&entryStart!=0&&now-entryStart<entryDuration+330)||(outgoing!=null)){postInvalidateOnAnimation();}else lastFrame=0;
+        if(!viewerFrozen&&(moving||dragging||(animations()&&entryStart!=0&&now-entryStart<entryDuration+330)||(outgoing!=null))){postInvalidateOnAnimation();}else lastFrame=0;
     }
     /** Glass has its own clipped display list; reading cached media cannot enqueue thumbnail work. */
     void drawBackdrop(Canvas c,int left,int top,int w,int h,RenderNode blurNode){
@@ -107,17 +123,17 @@ final class HoneycombView extends View {
     private float entryAlpha(long now,float delay,int page){return Math.min(1,entryProgress(now,delay,page)*3);}
     private float entryScale(float t){if(t>=1)return 1;return 1-(float)(.34*Math.exp(-6*t)*Math.cos(13*t));}
     private void roundedHex(float cx,float cy,float w,float h){float[] xs={cx,cx+w/2,cx+w/2,cx,cx-w/2,cx-w/2},ys={cy-h/2,cy-h/4,cy+h/4,cy+h/2,cy+h/4,cy-h/4};path.reset();float r=Math.min(dp(radius),w*.17f);for(int i=0;i<6;i++){int a=(i+5)%6,b=(i+1)%6;float da=(float)Math.hypot(xs[a]-xs[i],ys[a]-ys[i]),db=(float)Math.hypot(xs[b]-xs[i],ys[b]-ys[i]);float ax=xs[i]+(xs[a]-xs[i])*r/da,ay=ys[i]+(ys[a]-ys[i])*r/da,bx=xs[i]+(xs[b]-xs[i])*r/db,by=ys[i]+(ys[b]-ys[i])*r/db;if(i==0)path.moveTo(ax,ay);else path.lineTo(ax,ay);path.quadTo(xs[i],ys[i],bx,by);}path.close();}
-    private void drawTile(Canvas c,Media m,float cx,float cy,float w,float h,float alpha,boolean register){roundedHex(cx,cy,w,h);rect.set(cx-w/2,cy-h/2,cx+w/2,cy+h/2);c.save();c.clipPath(path);p.setColor(0xff303237);p.setAlpha((int)(255*alpha));c.drawRect(rect,p);Bitmap bitmap=register?thumbs.visible(m):thumbs.peek(m);if(bitmap!=null&&!bitmap.isRecycled()){float ratio=w/h,br=bitmap.getWidth()/(float)bitmap.getHeight();if(br>ratio){int sw=(int)(bitmap.getHeight()*ratio);srcRect.set((bitmap.getWidth()-sw)/2,0,(bitmap.getWidth()+sw)/2,bitmap.getHeight());}else{int sh=(int)(bitmap.getWidth()/ratio);srcRect.set(0,(bitmap.getHeight()-sh)/2,bitmap.getWidth(),(bitmap.getHeight()+sh)/2);}p.setAlpha((int)(255*alpha));c.drawBitmap(bitmap,srcRect,rect,p);}
-        if(m.video&&w>dp(32)){p.setColor(0x99000000);float yy=cy+h*.28f;String s=String.format(Locale.US,"%d:%02d",m.duration/60000,(m.duration/1000)%60);p.setTextSize(dp(9));p.setTypeface(Typeface.DEFAULT);float tw=p.measureText(s);c.drawRoundRect(cx-tw/2-dp(10),yy-dp(10),cx+tw/2+dp(5),yy+dp(3),dp(4),dp(4),p);drawIcon(c,playIcon,cx-tw/2-dp(5),yy-dp(3.5f),dp(8),alpha);p.setColor(Color.WHITE);p.setTextAlign(Paint.Align.CENTER);c.drawText(s,cx+dp(2),yy,p);p.setTextAlign(Paint.Align.LEFT);}
+    private void drawTile(Canvas c,Media m,float cx,float cy,float w,float h,float alpha,boolean register){if(m.uri.toString().equals(hiddenUri)){if(register)thumbs.visible(m);return;}roundedHex(cx,cy,w,h);rect.set(cx-w/2,cy-h/2,cx+w/2,cy+h/2);c.save();c.clipPath(path);p.setColor(0xff303237);p.setAlpha((int)(255*alpha));c.drawRect(rect,p);Bitmap bitmap=register?thumbs.visible(m):thumbs.peek(m);if(bitmap!=null&&!bitmap.isRecycled()){float ratio=w/h,br=bitmap.getWidth()/(float)bitmap.getHeight();if(br>ratio){int sw=(int)(bitmap.getHeight()*ratio);srcRect.set((bitmap.getWidth()-sw)/2,0,(bitmap.getWidth()+sw)/2,bitmap.getHeight());}else{int sh=(int)(bitmap.getWidth()/ratio);srcRect.set(0,(bitmap.getHeight()-sh)/2,bitmap.getWidth(),(bitmap.getHeight()+sh)/2);}p.setAlpha((int)(255*alpha));c.drawBitmap(bitmap,srcRect,rect,p);}
+        if(m.video&&w>dp(38)){float yy=cy+h*.24f;String label=String.format(Locale.US,"%d:%02d",m.duration/60000,(m.duration/1000)%60);p.setTextSize(dp(9));p.setTypeface(Typeface.DEFAULT);float textW=p.measureText(label),iconW=dp(9),space=dp(3),pad=dp(4),total=textW+iconW+space+pad*2;float left=cx-total/2;p.setColor(0x99000000);p.setAlpha(Math.round(alpha*170));c.drawRoundRect(left,yy-dp(7),left+total,yy+dp(7),dp(4),dp(4),p);drawIcon(c,playIcon,left+pad+iconW/2,yy,iconW,alpha);p.setColor(Color.WHITE);p.setAlpha(Math.round(alpha*255));p.setTextAlign(Paint.Align.LEFT);c.drawText(label,left+pad+iconW+space,yy-(p.ascent()+p.descent())/2,p);}
         String key=m.uri.toString();if((selecting||favorites.contains(key))&&w>dp(28)){float bx=cx+w*.29f,by=cy+h*.16f;p.setColor(selecting&&selected.contains(key)?0xff397df4:0xaa000000);c.drawCircle(bx,by,dp(8),p);if(!selecting||selected.contains(key))drawIcon(c,selecting?checkIcon:heartIcon,bx,by,dp(11),alpha);else{p.setColor(Color.WHITE);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));c.drawCircle(bx,by,dp(4),p);p.setStyle(Paint.Style.FILL);}}c.restore();p.setAlpha(255);
     }
     private void drawIcon(Canvas c,android.graphics.drawable.Drawable d,float x,float y,float size,float alpha){int half=Math.max(1,Math.round(size/2));d.setBounds(Math.round(x)-half,Math.round(y)-half,Math.round(x)+half,Math.round(y)+half);d.setAlpha(Math.round(alpha*255));d.draw(c);}
     private Media hit(float x,float y){for(int i=hits.size()-1;i>=0;i--){Hit h=hits.get(i);if(h.r.contains(x,y)){float xx=Math.abs(x-h.r.centerX())/(h.r.width()/2),yy=Math.abs(y-h.r.centerY())/(h.r.height()/2);if(xx<=1&&yy<=1-xx*.5f)return h.m;}}return null;}
     private float resist(float v,float min,float max){return v<min?min+(v-min)*.3f:v>max?max+(v-max)*.3f:v;}
-    @Override public boolean onTouchEvent(MotionEvent e){if(pages.isEmpty())return false;detector.onTouchEvent(e);Page pg=pages.get(index);switch(e.getActionMasked()){
+    @Override public boolean onTouchEvent(MotionEvent e){if(pages.isEmpty())return false;if(viewerFrozen)return true;detector.onTouchEvent(e);Page pg=pages.get(index);switch(e.getActionMasked()){
         case MotionEvent.ACTION_DOWN: if(tracker!=null)tracker.recycle();tracker=VelocityTracker.obtain();tracker.addMovement(e);downX=e.getX();downY=e.getY();startX=x;startY=pg.pos;axis=0;dragging=true;longPressed=false;pg.goal=pg.pos;pg.v=0;xGoal=x;xV=0;getParent().requestDisallowInterceptTouchEvent(true);invalidate();return true;
         case MotionEvent.ACTION_MOVE:if(tracker!=null)tracker.addMovement(e);if(longPressed)return true;float dx=e.getX()-downX,dy=e.getY()-downY;if(axis==0&&Math.hypot(dx,dy)>ViewConfiguration.get(getContext()).getScaledTouchSlop())axis=Math.abs(dx)>Math.abs(dy)*1.05?1:2;if(axis==1)xGoal=resist(startX-dx,0,(pages.size()-1)*getWidth());if(axis==2)pg.goal=resist(startY-dy,0,pg.max);invalidate();return true;
-        case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:float vx=0,vy=0;if(tracker!=null){tracker.addMovement(e);tracker.computeCurrentVelocity(1000);vx=tracker.getXVelocity();vy=tracker.getYVelocity();tracker.recycle();tracker=null;}dragging=false;if(e.getActionMasked()==MotionEvent.ACTION_CANCEL){vx=vy=0;}if(axis==1){float projected=xGoal-clamp(vx,-dp(2600),dp(2600))*.13f;int next=Math.round(projected/Math.max(1,getWidth()));movePage(Math.max(-1,Math.min(1,next-index)));xV=-vx*.22f;}else{xGoal=index*getWidth();}if(axis==2){pg.goal=clamp(pg.goal-clamp(vy,-dp(3300),dp(3300))*.20f,0,pg.max);pg.v=-vy*.28f;}axis=0;invalidate();return true;
+        case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:float vx=0,vy=0;if(tracker!=null){tracker.addMovement(e);tracker.computeCurrentVelocity(1000);vx=tracker.getXVelocity();vy=tracker.getYVelocity();tracker.recycle();tracker=null;}dragging=false;if(viewerFrozen){axis=0;return true;}if(e.getActionMasked()==MotionEvent.ACTION_CANCEL){vx=vy=0;}if(axis==1){float projected=xGoal-clamp(vx,-dp(2600),dp(2600))*.13f;int next=Math.round(projected/Math.max(1,getWidth()));movePage(Math.max(-1,Math.min(1,next-index)));xV=-vx*.22f;}else{xGoal=index*getWidth();}if(axis==2){pg.goal=clamp(pg.goal-clamp(vy,-dp(3300),dp(3300))*.20f,0,pg.max);pg.v=-vy*.28f;}axis=0;invalidate();return true;
     }return true;}
     @Override protected void onVisibilityChanged(View changed,int visibility){super.onVisibilityChanged(changed,visibility);if(visibility!=View.VISIBLE&&thumbs!=null)thumbs.clearVisible();}
     void dispose(){if(tracker!=null){tracker.recycle();tracker=null;}if(outgoing!=null){outgoing=null;}}
