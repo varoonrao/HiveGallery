@@ -1,0 +1,38 @@
+plugins { id 'com.android.application' }
+
+def repo = providers.gradleProperty('hiveRepo').orElse('').get()
+def code = providers.gradleProperty('hiveCode').orElse('1').get().toInteger()
+def name = providers.gradleProperty('hiveVersion').orElse('1.0.0').get()
+if (repo && !(repo ==~ /[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/)) throw new GradleException('Invalid hiveRepo')
+if (!(name ==~ /[0-9A-Za-z.\-]+/)) throw new GradleException('Invalid hiveVersion')
+android {
+    namespace 'com.hive.gallery'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.hive.gallery'
+        minSdk 29
+        targetSdk 35
+        versionCode code
+        versionName name
+        buildConfigField 'String', 'UPDATE_REPO', '"' + repo + '"'
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    signingConfigs {
+        release {
+            if (System.getenv('HIVE_KEYSTORE')) {
+                storeFile file(System.getenv('HIVE_KEYSTORE'))
+                storePassword System.getenv('HIVE_STORE_PASSWORD')
+                keyAlias System.getenv('HIVE_KEY_ALIAS')
+                keyPassword System.getenv('HIVE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+}
+dependencies { implementation 'androidx.core:core:1.15.0' }
