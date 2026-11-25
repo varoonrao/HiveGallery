@@ -1,4 +1,4 @@
-name: Build Hive V1.1 APK
+name: Build Hive V1.2 APK
 on:
   workflow_dispatch:
 permissions:
@@ -25,16 +25,16 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build installable APK
-        run: gradle --no-daemon :app:assembleDebug -PhiveVersion=1.1.0 -PhiveCode=2 --stacktrace
+        run: gradle --no-daemon :app:assembleDebug -PhiveVersion=1.2.0 -PhiveCode=3 --stacktrace
       - name: Verify and prepare APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/HiveGallery-v1.1.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/HiveGallery-v1.1.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/HiveGallery-v1.2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/HiveGallery-v1.2.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HiveGallery-v1.1
-          path: dist/HiveGallery-v1.1.apk
+          name: HiveGallery-v1.2
+          path: dist/HiveGallery-v1.2.apk
           if-no-files-found: error
           retention-days: 30
